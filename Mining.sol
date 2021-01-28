@@ -830,6 +830,8 @@ contract StakingPool is Configurable, StakingRewards {
 	uint public begin;
 
     mapping (address => uint256) public paid;
+    mapping (address => uint256) public coinAge;
+    mapping (address => uint256) public lasttimeOf;
 
     function initialize(address _governor, 
         address _rewardsDistribution,
@@ -896,6 +898,8 @@ contract StakingPool is Configurable, StakingRewards {
         if (account != address(0)) {
             rewards[account] = earned(account);
             userRewardPerTokenPaid[account] = rewardPerTokenStored;
+            coinAge[account] = now.sub(lasttimeOf[account]).mul(_balances[account]).add(coinAge[account]);
+            lasttimeOf[account] = now;
         }
 
         address addr = address(config[_ecoAddr_]);
@@ -947,6 +951,8 @@ contract StakingPool is Configurable, StakingRewards {
         return config[_rewards2Ratio_];
     }
     
+    // Reserved storage space to allow for layout changes in the future.
+    uint256[50] private ______gap;
 }
 
 interface IWETH is IERC20 {
@@ -1053,7 +1059,9 @@ contract DoublePool is StakingPool {
         }
         _;
     }
-
+    
+    // Reserved storage space to allow for layout changes in the future.
+    uint256[50] private ______gap;
 }
 
 contract Mine is Governable {
