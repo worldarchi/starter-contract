@@ -842,7 +842,7 @@ contract StakingPool is Configurable, StakingRewards {
 	    super.initialize(_governor);
         super.initialize(_rewardsDistribution, _rewardsToken, _stakingToken);
         config[_ecoAddr_] = uint(_ecoAddr);
-        config[_ecoRatio_] = 0.05 ether;
+        config[_ecoRatio_] = 0.10 ether;
     }
 
     function notifyRewardBegin(uint _lep, uint _period, uint _span, uint _begin) virtual public governance updateReward(address(0)) {
