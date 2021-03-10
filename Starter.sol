@@ -41,6 +41,15 @@ contract Starter is Configurable {
     }
     event Purchase(address indexed acct, uint amount, uint totalCurrency);
     
+    function purchaseHT() public payable {
+		require(address(currency) == address(0), 'should call purchase(uint amount) instead');
+        require(now < time, 'expired');
+        uint amount = msg.value;
+        purchasedCurrencyOf[msg.sender] = purchasedCurrencyOf[msg.sender].add(amount);
+        totalPurchasedCurrency = totalPurchasedCurrency.add(amount);
+        emit Purchase(msg.sender, amount, totalPurchasedCurrency);
+    }
+
     function totalSettleable() public view  returns (bool completed_, uint amount, uint volume, uint rate) {
         return settleable(address(0));
     }
@@ -52,7 +61,7 @@ contract Starter is Configurable {
             if(settledUnderlyingOf[acct] > 0)
                 return (completed_, 0, 0, rate);
         } else {
-            uint totalCurrency = IERC20(currency).balanceOf(address(this));
+            uint totalCurrency = currency == address(0) ? address(this).balance : IERC20(currency).balanceOf(address(this));
             uint totalUnderlying = IERC20(underlying).balanceOf(address(this));
             if(totalUnderlying.mul(price) < totalCurrency.mul(1e18))
                 rate = totalUnderlying.mul(price).div(totalCurrency);
@@ -65,8 +74,9 @@ contract Starter is Configurable {
         volume = settleAmount.mul(1e18).div(price);
     }
     
-    function settle() external {
+    function settle() public {
         require(now >= time, "It's not time yet");
+        require(settledUnderlyingOf[msg.sender] == 0, 'settled already');
         (bool completed_, uint amount, uint volume, uint rate) = settleable(msg.sender);
         if(!completed_) {
             completed = true;
@@ -74,7 +84,10 @@ contract Starter is Configurable {
         }
         settledUnderlyingOf[msg.sender] = volume;
         totalSettledUnderlying = totalSettledUnderlying.add(volume);
-        IERC20(currency).safeTransfer(msg.sender, amount);
+        if(currency == address(0))
+            msg.sender.transfer(amount);
+        else
+            IERC20(currency).safeTransfer(msg.sender, amount);
         IERC20(underlying).safeTransfer(msg.sender, volume);
         emit Settle(msg.sender, amount, volume, rate);
     }
@@ -83,20 +96,59 @@ contract Starter is Configurable {
     function withdrawable() public view returns (uint amt, uint vol) {
         if(!completed)
             return (0, 0);
-        amt = IERC20(currency).balanceOf(address(this)).add(totalSettledUnderlying.mul(price).div(settleRate).mul(uint(1e18).sub(settleRate)).div(1e18)).sub(totalPurchasedCurrency.mul(uint(1e18).sub(settleRate)).div(1e18));
+        amt = currency == address(0) ? address(this).balance : IERC20(currency).balanceOf(address(this));
+        amt = amt.add(totalSettledUnderlying.mul(price).div(settleRate).mul(uint(1e18).sub(settleRate)).div(1e18)).sub(totalPurchasedCurrency.mul(uint(1e18).sub(settleRate)).div(1e18));
         vol = IERC20(underlying).balanceOf(address(this)).add(totalSettledUnderlying).sub(totalPurchasedCurrency.mul(settleRate).div(price));
     }
     
-    function withdraw(address to, uint amount, uint volume) external governance {
+    function withdraw(address payable to, uint amount, uint volume) external governance {
         require(completed, "uncompleted");
         (uint amt, uint vol) = withdrawable();
         amount = Math.min(amount, amt);
         volume = Math.min(volume, vol);
-        IERC20(currency).safeTransfer(to, amount);
+        if(currency == address(0))
+            to.transfer(amount);
+        else
+            IERC20(currency).safeTransfer(to, amount);
         IERC20(underlying).safeTransfer(to, volume);
         emit Withdrawn(to, amount, volume);
     }
     event Withdrawn(address to, uint amount, uint volume);
+    
+    /// @notice This method can be used by the owner to extract mistakenly
+    ///  sent tokens to this contract.
+    /// @param _token The address of the token contract that you want to recover
+    function rescueTokens(address _token, address _dst) public governance {
+        uint balance = IERC20(_token).balanceOf(address(this));
+        IERC20(_token).safeTransfer(_dst, balance);
+    }
+    
+    function withdrawToken(address _dst) external governance {
+        rescueTokens(address(underlying), _dst);
+    }
+
+    function withdrawToken() external governance {
+        rescueTokens(address(underlying), msg.sender);
+    }
+    
+    function withdrawHT(address payable _dst) external governance {
+        _dst.transfer(address(this).balance);
+    }
+    
+    function withdrawHT() external governance {
+        msg.sender.transfer(address(this).balance);
+    }
+
+    receive() external payable{
+        if(msg.value > 0)
+            purchaseHT();
+        else
+            settle();
+    }
+    
+    fallback() external {
+        settle();
+    }
 }
 
 contract Offering is Configurable {
