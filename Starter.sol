@@ -19,17 +19,20 @@ contract Starter is Configurable {
     uint public totalSettledUnderlying;
     mapping (address => uint) public settledUnderlyingOf;
     uint public settleRate;
+    uint public timeSettle;
     
-    function __Starter_init(address governor_, address currency_, address underlying_, uint price_, uint time_) external initializer {
+    function __Starter_init(address governor_, address currency_, address underlying_, uint price_, uint time_, uint timeSettle_) external initializer {
 		__Governable_init_unchained(governor_);
-		__Starter_init_unchained(currency_, underlying_, price_, time_);
+		__Starter_init_unchained(currency_, underlying_, price_, time_, timeSettle_);
 	}
 	
-    function __Starter_init_unchained(address currency_, address underlying_, uint price_, uint time_) public governance {
+    function __Starter_init_unchained(address currency_, address underlying_, uint price_, uint time_, uint timeSettle_) public governance {
         currency    = currency_;
         underlying  = underlying_;
         price       = price_;
         time        = time_;
+        timeSettle  = timeSettle_;
+        require(timeSettle_ >= time_, 'timeSettle_ should >= time_');
     }
     
     function purchase(uint amount) external {
@@ -75,7 +78,7 @@ contract Starter is Configurable {
     }
     
     function settle() public {
-        require(now >= time, "It's not time yet");
+        require(now >= timeSettle, "It's not time yet");
         require(settledUnderlyingOf[msg.sender] == 0, 'settled already');
         (bool completed_, uint amount, uint volume, uint rate) = settleable(msg.sender);
         if(!completed_) {
