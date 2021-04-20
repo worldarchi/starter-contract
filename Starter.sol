@@ -20,6 +20,8 @@ contract Starter is Configurable {
     mapping (address => uint) public settledUnderlyingOf;
     uint public settleRate;
     uint public timeSettle;
+    uint totalSettledCurrency;
+    mapping (address => uint) public settledCurrencyOf;
     
     function __Starter_init(address governor_, address currency_, address underlying_, uint price_, uint time_, uint timeSettle_) external initializer {
 		__Governable_init_unchained(governor_);
@@ -61,8 +63,6 @@ contract Starter is Configurable {
         completed_ = completed;
         if(completed_) {
             rate = settleRate;
-            if(settledUnderlyingOf[acct] > 0)
-                return (completed_, 0, 0, rate);
         } else {
             uint totalCurrency = currency == address(0) ? address(this).balance : IERC20(currency).balanceOf(address(this));
             uint totalUnderlying = IERC20(underlying).balanceOf(address(this));
@@ -73,25 +73,32 @@ contract Starter is Configurable {
         }
         uint purchasedCurrency = acct == address(0) ? totalPurchasedCurrency : purchasedCurrencyOf[acct];
         uint settleAmount = purchasedCurrency.mul(rate).div(1e18);
-        amount = purchasedCurrency.sub(settleAmount);
-        volume = settleAmount.mul(1e18).div(price);
+        amount = purchasedCurrency.sub(settleAmount).sub(acct == address(0) ? totalSettledCurrency : settledCurrencyOf[acct]);
+        volume = settleAmount.mul(1e18).div(price).sub(acct == address(0) ? totalSettledUnderlying : settledUnderlyingOf[acct]);
     }
     
     function settle() public {
-        require(now >= timeSettle, "It's not time yet");
-        require(settledUnderlyingOf[msg.sender] == 0, 'settled already');
+        require(now >= time, "It is not time yet");
+        require(settledUnderlyingOf[msg.sender] == 0 || settledCurrencyOf[msg.sender] == 0 , 'settled already');
         (bool completed_, uint amount, uint volume, uint rate) = settleable(msg.sender);
         if(!completed_) {
             completed = true;
             settleRate = rate;
         }
-        settledUnderlyingOf[msg.sender] = volume;
-        totalSettledUnderlying = totalSettledUnderlying.add(volume);
+        
+        settledCurrencyOf[msg.sender] = settledCurrencyOf[msg.sender].add(amount);
+        totalSettledCurrency = totalSettledCurrency.add(amount);
         if(currency == address(0))
             msg.sender.transfer(amount);
         else
             IERC20(currency).safeTransfer(msg.sender, amount);
-        IERC20(underlying).safeTransfer(msg.sender, volume);
+            
+        require(amount > 0 || now >= timeSettle, 'It is not time to settle underlying');
+        if(now >= timeSettle) {
+            settledUnderlyingOf[msg.sender] = settledUnderlyingOf[msg.sender].add(volume);
+            totalSettledUnderlying = totalSettledUnderlying.add(volume);
+            IERC20(underlying).safeTransfer(msg.sender, volume);
+        }
         emit Settle(msg.sender, amount, volume, rate);
     }
     event Settle(address indexed acct, uint amount, uint volume, uint rate);
